@@ -12,3 +12,7 @@ Git 커밋 메시지와 함께.
 
 ## 2026-06-XX
 - 
+
+## 2026-08-06
+- 정리: MyDay를 독립 저장소로 분리
+- 추가: README, requirments.txt, .gitignore
