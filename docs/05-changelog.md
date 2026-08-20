@@ -15,4 +15,8 @@ Git 커밋 메시지와 함께.
 
 ## 2026-08-06
 - 정리: MyDay를 독립 저장소로 분리
-- 추가: README, requirments.txt, .gitignore
+- 추가: README, requirements.txt, .gitignore
+
+## 2026-08-20
+- 정리: dev-journal에 흩어져 있던 일지·문서·스크린샷을 myday 저장소로 통합
+- 추가: README에 화면 스크린샷과 프로젝트 구조
