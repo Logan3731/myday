@@ -18,6 +18,9 @@ env/
 .vscode/
 .idea/
 
+# Claude Code 개인 설정 (launch.json은 공유해도 되므로 제외하지 않음)
+.claude/settings.local.json
+
 # ===== 로컬 개인 데이터 =====
 # 내 실제 할 일/목표는 공개 저장소에 올리지 않음.
 # (앱이 실행되면 이 파일들을 자동으로 다시 만듭니다)

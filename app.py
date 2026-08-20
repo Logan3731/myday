@@ -12,6 +12,67 @@ GOALS_FILE = "goals.json"
 TEMPLATES_FILE = "templates.json"
 WIP_LIMIT = 3  # Doing 상태 동시 진행 최대 개수
 
+# ============================================
+# [코칭 워크북 질문]
+# docs/03-coaching-design.md 의 설계를 그대로 옮긴 것.
+# 질문/힌트를 고치고 싶으면 이 부분만 수정하면 된다.
+# ============================================
+WORKBOOK_5 = [
+    {
+        "title": "가능성 점검",
+        "question": "이 목표, 진짜로 할 수 있다고 믿나요? 믿기 어렵다면 그 이유는?",
+        "hint": "비슷한 걸 해낸 사람이 한 명이라도 있다면 가능해요.",
+    },
+    {
+        "title": "자기 인식",
+        "question": "지금 나는 어떤 상태예요? 무엇을 갖고 있고, 무엇이 부족해요?",
+        "hint": "강점/약점/시간/돈/관계 등으로 나눠서 생각해보세요.",
+    },
+    {
+        "title": "기준점 찾기",
+        "question": "내가 이걸 해냈다고 생각할 수 있는 기준이 무엇인가요?",
+        "hint": "낮은 기준은 지속할 수 있는 성취감을 높여주고, 높은 기준은 나의 한계를 높여줍니다.",
+    },
+    {
+        "title": "시작점 정하기",
+        "question": "이 목표의 마감기한이 1시간 뒤라면, 어느 정도까진 했어야 했다고 생각하시나요?",
+        "hint": '보통 "이것도 못하면 안되지" 부터 시작해야 합니다.',
+    },
+    {
+        "title": "실행 쪼개기",
+        "question": "위 답변을 바탕으로, 내일까지 할 수 있는 30분짜리 행동 3개를 뽑아보세요.",
+        "hint": "한 줄에 하나씩 적으면 아래 버튼으로 체크리스트에 바로 넣을 수 있어요. "
+                "무엇을 해야 할지 모를 때 긴 시간이 필요한 일을 먼저 도전하지 마세요. "
+                '숙제가 문제집 20장 풀기라면, 모두 풀지 못할 것 같아도 "이것도 못하면 안되지"의 분량만 해결하십시오. '
+                "아무것도 못한 사람이 되지 마십시오.",
+    },
+]
+
+WORKBOOK_3 = [
+    {
+        "title": "최종 모습",
+        "question": "이 목표가 다 끝났을 때, 어떤 상태가 되어 있어야 하나요?",
+        "hint": '"끝"을 스스로 정해두지 않으면 계속 끝나지 않아요.',
+    },
+    {
+        "title": "현재 위치",
+        "question": "지금 어디까지 와 있나요? 이미 한 것과 아직 안 한 것을 나눠보세요.",
+        "hint": "알고는 있는데 정리가 안 된 상태일 수 있어요. 적어서 밖으로 꺼내보세요.",
+    },
+    {
+        "title": "첫 걸음",
+        "question": "그럼 지금 당장 시작할 수 있는 것은 무엇인가요?",
+        "hint": "한 줄에 하나씩, 30분 안에 끝낼 수 있는 크기로 잘라보세요.",
+    },
+]
+
+# 진단 결과별 설정: (버튼 라벨, 선택 후 안내문, 워크북)
+DIAGNOSIS = {
+    "stuck":   ("😶 막막해요",        "막막할 땐 5단계로 천천히 풀어봐요.", WORKBOOK_5),
+    "partial": ("🤔 어느 정도 알아요", "핵심 3단계만 짚어볼게요.",          WORKBOOK_3),
+    "clear":   ("💪 잘 알아요",       "그럼 바로 체크리스트를 채워보세요.",  None),
+}
+
 
 # ============================================
 # [데이터 저장/불러오기]
@@ -76,6 +137,15 @@ goals_structure_changed = False
 for i in range(len(st.session_state.goals)):
     if "items" not in st.session_state.goals[i]:
         st.session_state.goals[i]["items"] = []
+        goals_structure_changed = True
+
+    # 자기 진단 / 코칭 워크북 (나중에 추가된 항목)
+    if "diagnosis" not in st.session_state.goals[i]:
+        st.session_state.goals[i]["diagnosis"] = None
+        goals_structure_changed = True
+
+    if "workbook" not in st.session_state.goals[i]:
+        st.session_state.goals[i]["workbook"] = {}
         goals_structure_changed = True
 
     for j in range(len(st.session_state.goals[i]["items"])):
@@ -345,6 +415,77 @@ def render_task(task, idx):
 
 
 # ============================================
+# [코칭 워크북 함수]
+# 질문을 한 화면에 전부 펼쳐서 보여준다.
+# (단계별로 넘기지 않는 이유는 docs/00-decisions.md 결정 #4 참고)
+# ============================================
+def render_workbook(goal, idx, steps):
+    saved = goal.get("workbook") or {}
+
+    with st.form(f"workbook_form_{idx}"):
+        answers = {}
+        for s_i, step in enumerate(steps):
+            st.markdown(f"**{s_i + 1}. {step['title']}**")
+            st.caption(step["question"])
+            answers[str(s_i)] = st.text_area(
+                step["question"],
+                value=saved.get(str(s_i), ""),
+                key=f"wb_{idx}_{s_i}",
+                label_visibility="collapsed",
+                height=90,
+            )
+            st.caption(f"💡 {step['hint']}")
+
+        if st.form_submit_button("💾 답변 저장", use_container_width=True):
+            st.session_state.goals[idx]["workbook"] = answers
+            save_goals(st.session_state.goals)
+            st.rerun()
+
+    # 마지막 단계 = 실제로 할 행동. 체크리스트로 옮겨야 실행으로 이어진다.
+    last_answer = saved.get(str(len(steps) - 1), "").strip()
+
+    if not last_answer:
+        st.caption("마지막 단계를 채우고 저장하면, 체크리스트로 옮기는 버튼이 생겨요.")
+        return
+
+    if st.button("📋 마지막 답변을 체크리스트로 등록",
+                 key=f"wb_to_items_{idx}", use_container_width=True):
+        existing = {item["text"] for item in st.session_state.goals[idx]["items"]}
+        added = 0
+
+        for line in last_answer.split("\n"):
+            text = line.strip()
+
+            # "- ", "1. " 같은 목록 기호가 있으면 떼어낸다
+            for marker in ("- ", "* ", "• "):
+                if text.startswith(marker):
+                    text = text[len(marker):].strip()
+                    break
+            parts = text.split(". ", 1)
+            if len(parts) == 2 and parts[0].isdigit():
+                text = parts[1].strip()
+
+            if not text or text in existing:
+                continue
+
+            st.session_state.goals[idx]["items"].append({
+                "item_id": uuid.uuid4().hex,
+                "text": text,
+                "done": False,
+                "sent_to_today": False,
+            })
+            existing.add(text)
+            added += 1
+
+        save_goals(st.session_state.goals)
+        if added:
+            st.success(f"체크리스트에 {added}개 추가했어요!")
+        else:
+            st.info("추가할 새 항목이 없어요.")
+        st.rerun()
+
+
+# ============================================
 # 🆕 [탭 3개 생성]
 # st.tabs() = 화면 상단에 클릭 가능한 탭들 만들기
 # ============================================
@@ -597,6 +738,40 @@ with tab_goals:
                 if goal.get("description"):
                     with st.expander("📄 목표 설명 보기"):
                         st.write(goal["description"])
+
+                # -----------------------------
+                # 자기 진단 → 코칭 워크북
+                # -----------------------------
+                st.markdown("**🧭 자기 진단**")
+                diagnosis = goal.get("diagnosis")
+
+                if not diagnosis:
+                    st.caption("이 목표, 지금 어느 정도 그려지나요?")
+                    diag_cols = st.columns(3)
+                    for col, (diag_key, (diag_label, _, _)) in zip(diag_cols, DIAGNOSIS.items()):
+                        with col:
+                            if st.button(diag_label, key=f"diag_{diag_key}_{idx}", use_container_width=True):
+                                st.session_state.goals[idx]["diagnosis"] = diag_key
+                                save_goals(st.session_state.goals)
+                                st.rerun()
+                else:
+                    diag_label, diag_guide, diag_steps = DIAGNOSIS[diagnosis]
+
+                    col_diag, col_diag_reset = st.columns([4, 1])
+                    with col_diag:
+                        st.caption(f"{diag_label} — {diag_guide}")
+                    with col_diag_reset:
+                        if st.button("↩ 다시", key=f"diag_reset_{idx}", use_container_width=True):
+                            st.session_state.goals[idx]["diagnosis"] = None
+                            save_goals(st.session_state.goals)
+                            st.rerun()
+
+                    if diag_steps:
+                        written = sum(
+                            1 for v in (goal.get("workbook") or {}).values() if v.strip()
+                        )
+                        with st.expander(f"✍️ {len(diag_steps)}단계 워크북 ({written}/{len(diag_steps)} 작성)"):
+                            render_workbook(goal, idx, diag_steps)
 
                 # -----------------------------
                 # 체크리스트 추가 폼
