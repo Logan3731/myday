@@ -69,6 +69,28 @@ WORKBOOK_3 = [
     },
 ]
 
+# 할 일 하나가 막막할 때 쓰는 워크북.
+# 목표보다 작은 단위라 3단계로 줄이고, 결과는 "새 할 일"로 쪼개진다.
+WORKBOOK_TASK = [
+    {
+        "title": "막힌 지점",
+        "question": "이 일, 어디서부터 막히나요?",
+        "hint": "몰라서 못 하는 건지, 알지만 손이 안 가는 건지만 갈라도 절반은 풀려요.",
+    },
+    {
+        "title": "최소 기준",
+        "question": "오늘 이만큼만 하면 \"했다\"고 칠 수 있는 건 어디까지예요?",
+        "hint": '"이것도 못하면 안되지" 의 분량을 찾으세요.',
+    },
+    {
+        "title": "첫 조각",
+        "question": "그럼 30분 안에 끝낼 수 있는 조각으로 나눠보세요.",
+        "hint": "적은 것들은 각각 새 할 일로 등록돼요. 하나만 적어도 괜찮아요.",
+        "slots": 3,
+        "slot_label": "조각",
+    },
+]
+
 # 진단 결과별 설정: (버튼 라벨, 선택 후 안내문, 워크북)
 DIAGNOSIS = {
     "stuck":   ("😶 막막해요",        "막막할 땐 5단계로 천천히 풀어봐요.", WORKBOOK_5),
@@ -122,6 +144,15 @@ for i in range(len(st.session_state.tasks)):
             st.session_state.tasks[i]["status"] = "done"
         else:
             st.session_state.tasks[i]["status"] = "todo"
+        tasks_structure_changed = True
+
+    # 막막할 때 쓰는 워크북 (나중에 추가된 항목)
+    if "stuck" not in st.session_state.tasks[i]:
+        st.session_state.tasks[i]["stuck"] = False
+        tasks_structure_changed = True
+
+    if "workbook" not in st.session_state.tasks[i]:
+        st.session_state.tasks[i]["workbook"] = {}
         tasks_structure_changed = True
 
 if tasks_structure_changed:
@@ -345,6 +376,27 @@ def render_task(task, idx):
 
         status = task.get("status", "todo")
 
+        # -----------------------------
+        # 막막할 때 — 할 일 쪼개기 워크북
+        # 아직 시작도 못한 To Do 에서만 필요하다.
+        # -----------------------------
+        if status == "todo":
+            if not task.get("stuck"):
+                if st.button("😶 막막해요", key=f"task_stuck_{task_key}", use_container_width=True):
+                    st.session_state.tasks[idx]["stuck"] = True
+                    save_tasks(st.session_state.tasks)
+                    st.rerun()
+            else:
+                written = sum(
+                    1 for v in (task.get("workbook") or {}).values() if has_answer(v)
+                )
+                with st.expander(f"✍️ 쪼개보기 ({written}/{len(WORKBOOK_TASK)} 작성)", expanded=True):
+                    render_workbook(task, idx, WORKBOOK_TASK, kind="task")
+                    if st.button("접기", key=f"task_unstuck_{task_key}", use_container_width=True):
+                        st.session_state.tasks[idx]["stuck"] = False
+                        save_tasks(st.session_state.tasks)
+                        st.rerun()
+
         if status == "todo":
             col1, col2, col3 = st.columns(3)
 
@@ -435,10 +487,11 @@ def has_answer(value):
     return bool(answer_list(value))
 
 
-def render_workbook(goal, idx, steps):
-    saved = goal.get("workbook") or {}
+def render_workbook(record, idx, steps, kind="goal"):
+    """kind="goal" 이면 답을 목표의 체크리스트로, "task" 면 새 할 일로 등록한다."""
+    saved = record.get("workbook") or {}
 
-    with st.form(f"workbook_form_{idx}"):
+    with st.form(f"workbook_form_{kind}_{idx}"):
         answers = {}
 
         for s_i, step in enumerate(steps):
@@ -448,7 +501,7 @@ def render_workbook(goal, idx, steps):
             slots = step.get("slots")
 
             if slots:
-                # 칸을 나눠서 받는 질문. 한 칸 = 체크리스트 항목 하나가 된다.
+                # 칸을 나눠서 받는 질문. 한 칸 = 항목 하나가 된다.
                 # (한 칸에 여러 줄을 적게 하면 폼 안에서 Enter가 줄바꿈으로 먹히지 않아
                 #  전부 한 덩어리로 저장되는 문제가 있었다)
                 previous = answer_list(saved.get(str(s_i)))
@@ -457,7 +510,7 @@ def render_workbook(goal, idx, steps):
                     filled.append(st.text_input(
                         f"{step['slot_label']} {n + 1}",
                         value=previous[n] if n < len(previous) else "",
-                        key=f"wb_{idx}_{s_i}_{n}",
+                        key=f"wb_{kind}_{idx}_{s_i}_{n}",
                     ))
                 answers[str(s_i)] = filled
             else:
@@ -467,7 +520,7 @@ def render_workbook(goal, idx, steps):
                 answers[str(s_i)] = st.text_area(
                     step["question"],
                     value=previous_text,
-                    key=f"wb_{idx}_{s_i}",
+                    key=f"wb_{kind}_{idx}_{s_i}",
                     label_visibility="collapsed",
                     height=90,
                 )
@@ -475,26 +528,34 @@ def render_workbook(goal, idx, steps):
             st.caption(f"💡 {step['hint']}")
 
         if st.form_submit_button("💾 답변 저장", use_container_width=True):
-            st.session_state.goals[idx]["workbook"] = answers
-            save_goals(st.session_state.goals)
+            if kind == "goal":
+                st.session_state.goals[idx]["workbook"] = answers
+                save_goals(st.session_state.goals)
+            else:
+                st.session_state.tasks[idx]["workbook"] = answers
+                save_tasks(st.session_state.tasks)
             st.rerun()
 
-    # 마지막 단계 = 실제로 할 행동. 체크리스트로 옮겨야 실행으로 이어진다.
+    # 마지막 단계 = 실제로 할 행동. 밖으로 꺼내야 실행으로 이어진다.
     actions = answer_list(saved.get(str(len(steps) - 1)))
+    target = "체크리스트" if kind == "goal" else "할 일"
 
     if not actions:
-        st.caption("마지막 단계를 채우고 저장하면, 체크리스트로 옮기는 버튼이 생겨요.")
+        st.caption(f"마지막 단계를 채우고 저장하면, {target}로 옮기는 버튼이 생겨요.")
         return
 
-    if st.button(f"📋 마지막 답변 {len(actions)}개를 체크리스트로 등록",
-                 key=f"wb_to_items_{idx}", use_container_width=True):
+    if not st.button(f"📋 마지막 답변 {len(actions)}개를 {target}로 등록",
+                     key=f"wb_to_items_{kind}_{idx}", use_container_width=True):
+        return
+
+    added = 0
+
+    if kind == "goal":
         existing = {item["text"] for item in st.session_state.goals[idx]["items"]}
-        added = 0
 
         for text in actions:
             if text in existing:
                 continue
-
             st.session_state.goals[idx]["items"].append({
                 "item_id": uuid.uuid4().hex,
                 "text": text,
@@ -505,11 +566,38 @@ def render_workbook(goal, idx, steps):
             added += 1
 
         save_goals(st.session_state.goals)
-        if added:
-            st.success(f"체크리스트에 {added}개 추가했어요!")
-        else:
-            st.info("이미 다 등록되어 있어요.")
-        st.rerun()
+    else:
+        # 막막했던 할 일을 조각 단위 할 일로 쪼갠다
+        existing = {t["title"] for t in st.session_state.tasks}
+
+        for text in actions:
+            if text in existing:
+                continue
+            st.session_state.tasks.append({
+                "id": len(st.session_state.tasks),
+                "title": text,
+                "description": f"'{record['title']}' 에서 쪼갠 조각",
+                "estimated_min": 30,
+                "deadline": record["deadline"],
+                "urgent": record.get("urgent", False),
+                "important": record.get("important", False),
+                "completed": False,
+                "completed_at": None,
+                "expired": False,
+                "status": "todo",
+                "stuck": False,
+                "workbook": {},
+            })
+            existing.add(text)
+            added += 1
+
+        save_tasks(st.session_state.tasks)
+
+    if added:
+        st.success(f"{target} {added}개를 만들었어요!")
+    else:
+        st.info("이미 다 등록되어 있어요.")
+    st.rerun()
 
 
 # ============================================
