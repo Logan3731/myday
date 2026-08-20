@@ -10,9 +10,6 @@ Git 커밋 메시지와 함께.
 - 수정: 기한 초과 자동 반영 (st.rerun 추가)
 - 결정: "프로젝트" → "목표" 단어 변경
 
-## 2026-06-XX
-- 
-
 ## 2026-08-06
 - 정리: MyDay를 독립 저장소로 분리
 - 추가: README, requirements.txt, .gitignore
