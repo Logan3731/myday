@@ -41,10 +41,11 @@ WORKBOOK_5 = [
     {
         "title": "실행 쪼개기",
         "question": "위 답변을 바탕으로, 내일까지 할 수 있는 30분짜리 행동 3개를 뽑아보세요.",
-        "hint": "한 줄에 하나씩 적으면 아래 버튼으로 체크리스트에 바로 넣을 수 있어요. "
-                "무엇을 해야 할지 모를 때 긴 시간이 필요한 일을 먼저 도전하지 마세요. "
+        "hint": "무엇을 해야 할지 모를 때 긴 시간이 필요한 일을 먼저 도전하지 마세요. "
                 '숙제가 문제집 20장 풀기라면, 모두 풀지 못할 것 같아도 "이것도 못하면 안되지"의 분량만 해결하십시오. '
                 "아무것도 못한 사람이 되지 마십시오.",
+        "slots": 3,
+        "slot_label": "행동",
     },
 ]
 
@@ -62,7 +63,9 @@ WORKBOOK_3 = [
     {
         "title": "첫 걸음",
         "question": "그럼 지금 당장 시작할 수 있는 것은 무엇인가요?",
-        "hint": "한 줄에 하나씩, 30분 안에 끝낼 수 있는 크기로 잘라보세요.",
+        "hint": "30분 안에 끝낼 수 있는 크기로 잘라보세요. 하나만 적어도 괜찮아요.",
+        "slots": 3,
+        "slot_label": "첫 걸음",
     },
 ]
 
@@ -419,21 +422,56 @@ def render_task(task, idx):
 # 질문을 한 화면에 전부 펼쳐서 보여준다.
 # (단계별로 넘기지 않는 이유는 docs/00-decisions.md 결정 #4 참고)
 # ============================================
+def answer_list(value):
+    """워크북 답변을 항상 리스트로 돌려준다. (예전 자유 입력 방식도 함께 처리)"""
+    if isinstance(value, list):
+        return [v.strip() for v in value if v and v.strip()]
+    if isinstance(value, str):
+        return [line.strip() for line in value.split("\n") if line.strip()]
+    return []
+
+
+def has_answer(value):
+    return bool(answer_list(value))
+
+
 def render_workbook(goal, idx, steps):
     saved = goal.get("workbook") or {}
 
     with st.form(f"workbook_form_{idx}"):
         answers = {}
+
         for s_i, step in enumerate(steps):
             st.markdown(f"**{s_i + 1}. {step['title']}**")
             st.caption(step["question"])
-            answers[str(s_i)] = st.text_area(
-                step["question"],
-                value=saved.get(str(s_i), ""),
-                key=f"wb_{idx}_{s_i}",
-                label_visibility="collapsed",
-                height=90,
-            )
+
+            slots = step.get("slots")
+
+            if slots:
+                # 칸을 나눠서 받는 질문. 한 칸 = 체크리스트 항목 하나가 된다.
+                # (한 칸에 여러 줄을 적게 하면 폼 안에서 Enter가 줄바꿈으로 먹히지 않아
+                #  전부 한 덩어리로 저장되는 문제가 있었다)
+                previous = answer_list(saved.get(str(s_i)))
+                filled = []
+                for n in range(slots):
+                    filled.append(st.text_input(
+                        f"{step['slot_label']} {n + 1}",
+                        value=previous[n] if n < len(previous) else "",
+                        key=f"wb_{idx}_{s_i}_{n}",
+                    ))
+                answers[str(s_i)] = filled
+            else:
+                previous_text = saved.get(str(s_i), "")
+                if not isinstance(previous_text, str):
+                    previous_text = "\n".join(answer_list(previous_text))
+                answers[str(s_i)] = st.text_area(
+                    step["question"],
+                    value=previous_text,
+                    key=f"wb_{idx}_{s_i}",
+                    label_visibility="collapsed",
+                    height=90,
+                )
+
             st.caption(f"💡 {step['hint']}")
 
         if st.form_submit_button("💾 답변 저장", use_container_width=True):
@@ -442,30 +480,19 @@ def render_workbook(goal, idx, steps):
             st.rerun()
 
     # 마지막 단계 = 실제로 할 행동. 체크리스트로 옮겨야 실행으로 이어진다.
-    last_answer = saved.get(str(len(steps) - 1), "").strip()
+    actions = answer_list(saved.get(str(len(steps) - 1)))
 
-    if not last_answer:
+    if not actions:
         st.caption("마지막 단계를 채우고 저장하면, 체크리스트로 옮기는 버튼이 생겨요.")
         return
 
-    if st.button("📋 마지막 답변을 체크리스트로 등록",
+    if st.button(f"📋 마지막 답변 {len(actions)}개를 체크리스트로 등록",
                  key=f"wb_to_items_{idx}", use_container_width=True):
         existing = {item["text"] for item in st.session_state.goals[idx]["items"]}
         added = 0
 
-        for line in last_answer.split("\n"):
-            text = line.strip()
-
-            # "- ", "1. " 같은 목록 기호가 있으면 떼어낸다
-            for marker in ("- ", "* ", "• "):
-                if text.startswith(marker):
-                    text = text[len(marker):].strip()
-                    break
-            parts = text.split(". ", 1)
-            if len(parts) == 2 and parts[0].isdigit():
-                text = parts[1].strip()
-
-            if not text or text in existing:
+        for text in actions:
+            if text in existing:
                 continue
 
             st.session_state.goals[idx]["items"].append({
@@ -481,7 +508,7 @@ def render_workbook(goal, idx, steps):
         if added:
             st.success(f"체크리스트에 {added}개 추가했어요!")
         else:
-            st.info("추가할 새 항목이 없어요.")
+            st.info("이미 다 등록되어 있어요.")
         st.rerun()
 
 
@@ -768,7 +795,7 @@ with tab_goals:
 
                     if diag_steps:
                         written = sum(
-                            1 for v in (goal.get("workbook") or {}).values() if v.strip()
+                            1 for v in (goal.get("workbook") or {}).values() if has_answer(v)
                         )
                         with st.expander(f"✍️ {len(diag_steps)}단계 워크북 ({written}/{len(diag_steps)} 작성)"):
                             render_workbook(goal, idx, diag_steps)
