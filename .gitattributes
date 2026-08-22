@@ -1,0 +1,5 @@
+# 줄바꿈은 LF 로 통일한다.
+#
+# 이 프로젝트는 맥에서 돌아간다. 실행 스크립트(.command)의 줄바꿈이
+# 윈도우 방식(CRLF)으로 바뀌면 "bad interpreter" 에러가 나면서 실행이 안 된다.
+* text=auto eol=lf
